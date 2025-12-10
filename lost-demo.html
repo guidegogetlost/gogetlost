@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Lost — get randomly lost (demo)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    :root{
+      --accent:#4a90e2;
+      --card:#ffffff;
+      --bg:#f4f7fb;
+      --muted:#64748b;
+      font-family: Inter, system-ui, sans-serif;
+    }
+    body{ margin:0; background:var(--bg); color:#0f172a; }
+    header{ padding:20px; background:#fff; border-bottom:1px solid rgba(0,0,0,0.05); }
+    header h1{ margin:0; font-size:22px; }
+    header p{ margin:4px 0 0; font-size:14px; color:var(--muted); }
+
+    .container{ display:grid; grid-template-columns:360px 1fr; gap:20px; padding:20px; }
+    .panel{ background:#fff; padding:16px; border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.05); }
+
+    #map{ height:620px; border-radius:12px; }
+
+    label{ font-size:13px; margin:8px 0 4px; display:block; color:var(--muted);}
+    select,input[type="text"],input[type="number"]{
+      width:100%;
+      padding:8px;
+      border-radius:6px;
+      border:1px solid rgba(0,0,0,0.15);
+    }
+
+    .check-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
+    .check-grid label{ display:flex; align-items:center; gap:6px; padding:6px; background:#f8fafc; border-radius:8px; cursor:pointer; }
+
+    button{ background:var(--accent); border:none; padding:10px 12px; color:#fff; border-radius:8px; cursor:pointer; font-weight:600; }
+    button.secondary{ background:transparent; color:var(--accent); border:1px solid var(--accent); }
+
+    .result{ margin-top:15px; border-top:1px solid #eee; padding-top:15px; }
+
+    .saved-list{ margin-top:20px; font-size:14px; }
+    .saved-item{ padding:6px 0; border-bottom:1px solid #eee; }
+
+    /* Location card styling */
+    .location-card {
+      background: #ffffff;
+      border-radius: 14px;
+      padding: 16px 18px;
+      box-shadow: 0 10px 30px rgba(15,23,42,0.08);
+      border: 1px solid #e2e8f0;
+    }
+    .location-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .location-card h2 {
+      margin: 0;
+      font-size: 1.3rem;
+    }
+    .location-region {
+      margin: 2px 0 0;
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .distance-pill {
+      padding: 6px 10px;
+      background: #eef2ff;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: #4f46e5;
+      white-space: nowrap;
+    }
+    .tags-row {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag-chip {
+      background: #f1f5f9;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      color: #475569;
+    }
+    .location-description {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      color: #1e293b;
+    }
+    .things-to-do h3 {
+      margin: 14px 0 6px;
+      font-size: 0.95rem;
+    }
+    .things-to-do ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 0.9rem;
+      color: #475569;
+    }
+    .meta-row {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+    .actions-row {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .btn {
+      border-radius: 999px;
+      border: 1px solid #e2e8f0;
+      padding: 8px 14px;
+      font-size: 0.85rem;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn.primary {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+    }
+    .btn.ghost {
+      background: transparent;
+    }
+
+    /* Email block */
+    .email-block {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px dashed #e2e8f0;
+    }
+    .email-block label {
+      margin: 0 0 4px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .email-form-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:4px;
+    }
+    .email-input {
+      flex:1;
+      min-width:180px;
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid #cbd5e1;
+      font-size:13px;
+    }
+    .email-button {
+      border:none;
+      padding:8px 16px;
+      border-radius:999px;
+      background:#111827;
+      color:#fff;
+      cursor:pointer;
+      font-size:13px;
+      white-space:nowrap;
+    }
+    .email-status {
+      font-size:12px;
+      color:#64748b;
+      margin-top:6px;
+    }
+
+    @media(max-width:900px){
+      .container{ grid-template-columns:1fr; }
+      #map{ height:400px; }
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>Lost</h1>
+  <p>Find a random adventure somewhere in the UK.</p>
+</header>
+
+<div class="container">
+
+  <!-- LEFT PANEL -->
+  <div class="panel">
+
+    <h3>Find an adventure</h3>
+
+    <!-- Postcode start -->
+    <label>Your starting postcode</label>
+    <input
+      type="text"
+      id="postcodeInput"
+      placeholder="e.g. BS1 4ST"
+    />
+    <p style="font-size:12px; color:#64748b; margin-top:4px;">
+      We&apos;ll use this to work out rough distance – your postcode isn&apos;t stored.
+    </p>
+
+    <!-- Radius in miles -->
+    <label>Radius (miles)</label>
+    <input
+      type="number"
+      id="radiusMiles"
+      min="1"
+      max="300"
+      value="50"
+    />
+    <p style="font-size:12px; color:#64748b; margin-top:4px;">
+      Try 20–60 miles to start with.
+    </p>
+
+    <label>Adventure type</label>
+    <div class="check-grid" id="types">
+      <label><input type="checkbox" value="coastal" checked /> Coastal</label>
+      <label><input type="checkbox" value="walk" checked /> Walk</label>
+      <label><input type="checkbox" value="nature" checked /> Nature</label>
+      <label><input type="checkbox" value="urban" /> Urban</label>
+      <label><input type="checkbox" value="historic" /> Historic</label>
+      <label><input type="checkbox" value="food" /> Food</label>
+      <label><input type="checkbox" value="hidden_gem" /> Hidden Gem</label>
+      <label><input type="checkbox" value="viewpoint" /> Viewpoint</label>
+    </div>
+
+    <label>Mood</label>
+    <div class="check-grid" id="moods">
+      <label><input type="checkbox" value="scenic" checked /> Scenic</label>
+      <label><input type="checkbox" value="calm" /> Calm</label>
+      <label><input type="checkbox" value="thrilling" /> Thrilling</label>
+      <label><input type="checkbox" value="quirky" /> Quirky</label>
+    </div>
+
+    <label style="margin-top:10px;">
+      <input type="checkbox" id="surpriseBoost" /> Boost hidden gems
+    </label>
+
+    <div style="margin-top:15px; display:flex; gap:10px;">
+      <button id="pickBtn">Surprise me</button>
+      <button class="secondary" id="showListBtn">Show filtered</button>
+    </div>
+
+    <div id="resultArea" class="result"></div>
+
+    <div class="saved-list">
+      <strong>Saved adventures</strong>
+      <div id="savedItems">— none —</div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT MAP -->
+  <div class="panel">
+    <div id="map"></div>
+  </div>
+
+</div>
+
+<!-- JS + MAP LOGIC -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ------------------
+// Dataset (UK spots + extra cities)
+// ------------------
+const LOCATIONS = [
+  {
+    id:"durdle",
+    name:"Durdle Door (Jurassic Coast)",
+    lat:50.6197,
+    lon:-2.2450,
+    types:["coastal","walk","viewpoint"],
+    moods:["scenic"],
+    tags:["beach","arch","hidden_gem"],
+    description:"Famous limestone arch on the Jurassic Coast with cliff walks and huge sea views.",
+    tripType:"Half-day",
+    difficulty:"Moderate",
+    suitability:"Dog-friendly"
+  },
+  {
+    id:"seven_sisters",
+    name:"Seven Sisters Cliffs",
+    lat:50.7480,
+    lon:0.1650,
+    types:["coastal","walk","viewpoint"],
+    moods:["scenic","thrilling"],
+    tags:["cliffs","sea"],
+    description:"Iconic chalk cliffs in East Sussex with dramatic coastal paths.",
+    tripType:"Day trip",
+    difficulty:"Moderate",
+    suitability:"Confident walkers"
+  },
+  {
+    id:"windermere",
+    name:"Windermere (Orrest Head)",
+    lat:54.3620,
+    lon:-2.9150,
+    types:["nature","walk","viewpoint"],
+    moods:["scenic","calm"],
+    tags:["lake","hills"],
+    description:"Short climb to a classic Lake District viewpoint overlooking Windermere.",
+    tripType:"Half-day",
+    difficulty:"Moderate",
+    suitability:"Most walkers"
+  },
+  {
+    id:"mam_tor",
+    name:"Mam Tor (Peak District)",
+    lat:53.3493,
+    lon:-1.8002,
+    types:["nature","walk","viewpoint"],
+    moods:["scenic"],
+    tags:["ridge","hills"],
+    description:"Ridge walk with sweeping views over the Peak District.",
+    tripType:"Half-day",
+    difficulty:"Moderate",
+    suitability:"Most walkers"
+  },
+  {
+    id:"epping",
+    name:"Epping Forest",
+    lat:51.5600,
+    lon:0.0380,
+    types:["nature","walk","urban"],
+    moods:["calm","cozy"],
+    tags:["woodland","near-london"],
+    description:"Ancient woodland on the edge of London – easy paths and quiet clearings.",
+    tripType:"Half-day",
+    difficulty:"Easy",
+    suitability:"Family & dog-friendly"
+  },
+  {
+    id:"arthurs_seat",
+    name:"Arthur's Seat (Edinburgh)",
+    lat:55.9445,
+    lon:-3.1618,
+    types:["viewpoint","walk","urban"],
+    moods:["scenic","thrilling"],
+    tags:["hill","city-views"],
+    description:"Extinct volcano above Edinburgh with panoramic city and sea views.",
+    tripType:"Few hours",
+    difficulty:"Moderate",
+    suitability:"Most walkers"
+  },
+  {
+    id:"portmeirion",
+    name:"Portmeirion Village",
+    lat:53.0422,
+    lon:-4.2010,
+    types:["historic","hidden_gem","scenic"],
+    moods:["quirky","scenic"],
+    tags:["village","colourful"],
+    description:"Italian-style fantasy village in North Wales with colourful buildings and estuary views.",
+    tripType:"Day trip",
+    difficulty:"Easy",
+    suitability:"Everyone"
+  },
+  {
+    id:"brecon",
+    name:"Pen y Fan (Brecon Beacons)",
+    lat:51.8832,
+    lon:-3.4360,
+    types:["nature","walk","viewpoint"],
+    moods:["scenic","thrilling"],
+    tags:["mountain","national-park"],
+    description:"Popular summit walk with big views over the Brecon Beacons.",
+    tripType:"Half-day",
+    difficulty:"Moderate",
+    suitability:"Fit walkers"
+  },
+  {
+    id:"holyhead",
+    name:"Holyhead Mountain (Anglesey)",
+    lat:53.3058,
+    lon:-4.6576,
+    types:["viewpoint","walk","hidden_gem"],
+    moods:["thrilling","scenic"],
+    tags:["island","cliffs"],
+    description:"Highest point on Anglesey with rugged coastline and lighthouse views.",
+    tripType:"Half-day",
+    difficulty:"Moderate",
+    suitability:"Most walkers"
+  },
+  {
+    id:"glasgow_murals",
+    name:"Glasgow Street Art Trail",
+    lat:55.8609,
+    lon:-4.2514,
+    types:["urban","hidden_gem"],
+    moods:["quirky"],
+    tags:["street-art","city"],
+    description:"Self-guided wander through Glasgow's murals, alleys and backstreets.",
+    tripType:"Few hours",
+    difficulty:"Easy",
+    suitability:"Everyone"
+  },
+  {
+    id:"giants_causeway",
+    name:"Giant's Causeway",
+    lat:55.2408,
+    lon:-6.5116,
+    types:["coastal","walk","viewpoint"],
+    moods:["scenic","thrilling"],
+    tags:["hexagonal-rocks","world-heritage"],
+    description:"Famous basalt columns on the Antrim coast with clifftop paths.",
+    tripType:"Day trip",
+    difficulty:"Easy–Moderate",
+    suitability:"Most visitors"
+  },
+  {
+    id:"st_ives",
+    name:"St Ives, Cornwall",
+    lat:50.2120,
+    lon:-5.4800,
+    types:["coastal","food","scenic"],
+    moods:["cozy","scenic"],
+    tags:["beach","harbour","galleries"],
+    description:"Harbour town with beaches, galleries and great seafood.",
+    tripType:"Day trip",
+    difficulty:"Easy",
+    suitability:"Everyone"
+  },
+
+  /* -------- New city / region locations -------- */
+
+  {
+    id:"bristol_harbourside",
+    name:"Bristol Harbourside & Clifton",
+    lat:51.4545,
+    lon:-2.5879,
+    types:["urban","walk","viewpoint"],
+    moods:["scenic","quirky"],
+    tags:["harbour","bridge","street-art"],
+    description:"Harbourside wandering, colourful houses and the Clifton Suspension Bridge at sunset.",
+    tripType:"Half or full day",
+    difficulty:"Easy",
+    suitability:"City wanderers"
+  },
+  {
+    id:"manchester_nq",
+    name:"Manchester – Northern Quarter & canals",
+    lat:53.4808,
+    lon:-2.2426,
+    types:["urban","food"],
+    moods:["quirky","scenic"],
+    tags:["street-art","independent-food","canals"],
+    description:"Industrial canals, coffee spots and street art around the Northern Quarter.",
+    tripType:"Half-day",
+    difficulty:"Easy",
+    suitability:"Urban explorers"
+  },
+  {
+    id:"birmingham_canals",
+    name:"Birmingham Canals & Jewellery Quarter",
+    lat:52.4862,
+    lon:-1.8904,
+    types:["urban","walk","historic"],
+    moods:["scenic","calm"],
+    tags:["canal-walk","historic-quarter"],
+    description:"Waterside paths and red-brick lanes through the Jewellery Quarter.",
+    tripType:"Half-day",
+    difficulty:"Easy",
+    suitability:"Most walkers"
+  },
+  {
+    id:"bournemouth_seafront",
+    name:"Bournemouth Pier & beach",
+    lat:50.7192,
+    lon:-1.8808,
+    types:["coastal","walk","food"],
+    moods:["scenic","calm"],
+    tags:["pier","sand-beach","seafront"],
+    description:"Pier, promenade and long sandy beaches with plenty of places to stop.",
+    tripType:"Half-day",
+    difficulty:"Easy",
+    suitability:"Families & friends"
+  },
+  {
+    id:"poole_sandbanks",
+    name:"Poole Harbour & Sandbanks",
+    lat:50.7150,
+    lon:-1.9872,
+    types:["coastal","walk","hidden_gem"],
+    moods:["scenic","calm"],
+    tags:["harbour","sand-dunes","ferries"],
+    description:"Sheltered harbour views, sandy peninsula and windy walks along the shoreline.",
+    tripType:"Half-day",
+    difficulty:"Easy",
+    suitability:"Most visitors"
+  },
+  {
+    id:"southampton_waterfront",
+    name:"Southampton Waterfront & parks",
+    lat:50.9097,
+    lon:-1.4043,
+    types:["urban","walk"],
+    moods:["calm","scenic"],
+    tags:["waterfront","parks","maritime-history"],
+    description:"Green parks, old city walls and views over Southampton Water.",
+    tripType:"Half-day",
+    difficulty:"Easy",
+    suitability:"City walkers"
+  },
+  {
+    id:"middlesbrough_roseberry",
+    name:"Middlesbrough & Roseberry Topping",
+    lat:54.5282,
+    lon:-1.1550,
+    types:["nature","viewpoint","urban"],
+    moods:["scenic","thrilling"],
+    tags:["hill-walk","moorland","views"],
+    description:"A short, steep climb up Roseberry Topping with views back towards Teesside.",
+    tripType:"Half-day",
+    difficulty:"Moderate",
+    suitability:"Most walkers"
+  },
+  {
+    id:"newcastle_quayside",
+    name:"Newcastle Quayside & Tynemouth",
+    lat:54.9783,
+    lon:-1.6178,
+    types:["urban","coastal","walk"],
+    moods:["scenic","quirky"],
+    tags:["bridges","quayside","coast-trip"],
+    description:"Iconic bridges on the Tyne and an easy hop to the North Sea at Tynemouth.",
+    tripType:"Half or full day",
+    difficulty:"Easy",
+    suitability:"Urban & coastal explorers"
+  },
+  {
+    id:"cornwall_coast_mix",
+    name:"Cornwall – coast path mix",
+    lat:50.3000,
+    lon:-5.2000,
+    types:["coastal","nature","walk"],
+    moods:["scenic","calm"],
+    tags:["coast-path","coves","headlands"],
+    description:"A stretch of Cornish coast path with coves, headlands and big Atlantic views.",
+    tripType:"Full day",
+    difficulty:"Moderate",
+    suitability:"Confident walkers"
+  },
+  {
+    id:"dorset_jurassic_mixed",
+    name:"Dorset – Jurassic Coast mix",
+    lat:50.7000,
+    lon:-2.3000,
+    types:["coastal","nature","walk"],
+    moods:["scenic","thrilling"],
+    tags:["cliffs","coves","jurassic-coast"],
+    description:"Dorset coast with cliffs, sea stacks and classic Jurassic Coast scenery.",
+    tripType:"Full day",
+    difficulty:"Moderate",
+    suitability:"Confident walkers"
+  }
+];
+
+// ------------------
+// Map Setup
+// ------------------
+const map = L.map('map').setView([54.5, -3], 6);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+let marker = null;
+
+function toRad(d){ return d * Math.PI / 180; }
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371;
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(toRad(lat1))*Math.cos(toRad(lat2)) *
+            Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ------------------
+// Start Location — postcode based
+// ------------------
+async function getStartCoords() {
+  const postcodeInput = document.getElementById("postcodeInput");
+  const resultBox = document.getElementById("resultArea");
+
+  function showError(msg) {
+    const prev = resultBox.querySelector(".location-card");
+    const prevHtml = prev ? prev.outerHTML : "";
+    resultBox.innerHTML = `
+      ${prevHtml || ""}
+      <p style="color:#b91c1c;font-size:14px;margin-top:8px;">${msg}</p>
+    `;
+  }
+
+  if (!postcodeInput) {
+    console.error("postcodeInput element not found");
+    return null;
+  }
+
+  const raw = postcodeInput.value.trim();
+  if (!raw) {
+    showError("Please enter a starting postcode.");
+    return null;
+  }
+
+  const postcode = raw.toUpperCase().replace(/\s+/g, "");
+
+  try {
+    const resp = await fetch(
+      "https://api.postcodes.io/postcodes/" + encodeURIComponent(postcode)
+    );
+    const data = await resp.json();
+
+    if (data.status !== 200 || !data.result) {
+      showError("We couldn&apos;t find that postcode. Double-check and try again.");
+      return null;
+    }
+
+    const lat = data.result.latitude;
+    const lon = data.result.longitude;
+
+    if (typeof lat !== "number" || typeof lon !== "number") {
+      showError("That postcode didn&apos;t return a valid location.");
+      return null;
+    }
+
+    return { lat, lon };
+  } catch (err) {
+    console.error("Postcode lookup error", err);
+    showError("We couldn&apos;t look up that postcode just now. Please try again in a moment.");
+    return null;
+  }
+}
+
+// ------------------
+// Filtering / Picking
+// ------------------
+function filterLocations(start, radiusKm, types, moods){
+  return LOCATIONS.map(loc => {
+    const copy = {...loc};
+    const dist = haversine(start.lat,start.lon,loc.lat,loc.lon);
+    copy._distance = dist;
+    return copy;
+  }).filter(loc => {
+    if(types.length && !loc.types.some(t=>types.includes(t))) return false;
+    if(moods.length && !loc.moods.some(m=>moods.includes(m))) return false;
+    return loc._distance <= radiusKm;
+  });
+}
+
+function pickRandom(list, boost){
+  if(list.length === 0) return null;
+
+  let pool = [];
+  list.forEach(l=>{
+    let w = 1;
+    if(boost && l.types.includes("hidden_gem")) w += 2;
+    for(let i=0;i<w;i++) pool.push(l);
+  });
+
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
+let currentAdventure = null;
+
+// ------------------
+// Show Result
+// ------------------
+function showResult(loc){
+  const box = document.getElementById("resultArea");
+  if(!loc){
+    box.innerHTML = "<p>No locations match your filters.</p>";
+    currentAdventure = null;
+    return;
+  }
+
+  currentAdventure = loc;
+  const primaryTags = (loc.types || []).join(", ");
+
+  const activities = generateActivities(loc);
+
+  box.innerHTML = `
+    <div class="location-card">
+      <div class="location-header">
+        <div>
+          <h2>${loc.name}</h2>
+          <p class="location-region">
+            UK · ${primaryTags || "Adventure"}
+          </p>
+        </div>
+        <div class="distance-pill">
+          ${loc._distance.toFixed(1)} km away
+        </div>
+      </div>
+
+      <div class="tags-row">
+        ${(loc.types || []).map(t=>`<span class="tag-chip">${t}</span>`).join("")}
+        ${(loc.tags || []).map(t=>`<span class="tag-chip">${t}</span>`).join("")}
+      </div>
+
+      <p class="location-description">
+        ${loc.description}
+      </p>
+
+      <div class="things-to-do">
+        <h3>Things to do here</h3>
+        <ul>
+          ${activities.map(a=>`<li>${a}</li>`).join("")}
+        </ul>
+      </div>
+
+      <div class="meta-row">
+        <span>⏱ ${loc.tripType || "Trip"}</span>
+        <span>🥾 Difficulty: ${loc.difficulty || "Unknown"}</span>
+        <span>🐾 ${loc.suitability || "Check access"}</span>
+      </div>
+
+      <div class="actions-row">
+        <button class="btn primary" onclick="openInMaps()">Open in Maps</button>
+        <button class="btn" onclick="saveAdventure('${loc.id}')">Save adventure</button>
+        <button class="btn ghost" onclick="shareAdventure()">Share</button>
+        <button class="btn" onclick="scrollToPostcard()">Send as Postcard</button>
+      </div>
+
+      <div class="email-block">
+        <label for="emailInput">Email this adventure to yourself (or a friend)</label>
+        <div class="email-form-row">
+          <input id="emailInput" type="email" class="email-input"
+                 placeholder="you@example.com" />
+          <button class="email-button" onclick="sendPostcardEmail()">Send my LOST postcard</button>
+        </div>
+        <p id="emailStatus" class="email-status"></p>
+      </div>
+    </div>
+  `;
+
+  if(marker) map.removeLayer(marker);
+  marker = L.marker([loc.lat,loc.lon]).addTo(map)
+    .bindPopup(loc.name)
+    .openPopup();
+  map.setView([loc.lat,loc.lon], 10);
+}
+
+function generateActivities(loc){
+  const acts = [];
+  if(loc.types.includes("coastal")){
+    acts.push("Walk a stretch of the coast path and find a quiet viewpoint.");
+    acts.push("Spend time on the beach and, if safe, paddle or swim.");
+  }
+  if(loc.types.includes("walk") || loc.types.includes("viewpoint")){
+    acts.push("Follow a short loop walk to a nearby viewpoint.");
+  }
+  if(loc.types.includes("urban")){
+    acts.push("Wander side streets and look for unexpected details (murals, old signs).");
+  }
+  if(loc.types.includes("food")){
+    acts.push("Find a local café or pub and try something from the specials board.");
+  }
+  if(acts.length === 0){
+    acts.push("Take a slow wander and let the place dictate your route.");
+  }
+  return acts.slice(0,3);
+}
+
+// ------------------
+// Save / Share
+// ------------------
+function saveAdventure(id){
+  const loc = LOCATIONS.find(l=>l.id===id);
+  const box = document.getElementById("savedItems");
+
+  const div = document.createElement("div");
+  div.className = "saved-item";
+  div.textContent = loc.name;
+  box.appendChild(div);
+}
+
+function openInMaps(){
+  if(!currentAdventure) return;
+  const lat = currentAdventure.lat;
+  const lon = currentAdventure.lon;
+  const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+  window.open(url, "_blank");
+}
+
+function shareAdventure(){
+  if(!currentAdventure) return;
+  const text = `We’re getting lost in ${currentAdventure.name} via LOST.`;
+  const url = "https://gogetlost.uk"; // your domain
+
+  if(navigator.share){
+    navigator.share({ title:"LOST adventure", text, url }).catch(()=>{});
+  } else {
+    alert(text + "\n\n(Sharing preview – in a real app this would open share options.)");
+  }
+}
+
+// ------------------
+// Real postcard email (via Netlify function)
+// ------------------
+async function sendPostcardEmail(){
+  const status = document.getElementById("emailStatus");
+  const input = document.getElementById("emailInput");
+  const email = (input.value || "").trim();
+
+  if (!currentAdventure) {
+    status.textContent = "Pick an adventure first.";
+    return;
+  }
+  if (!email || !email.includes("@")) {
+    status.textContent = "Please enter a valid email address.";
+    return;
+  }
+
+  const locationName = currentAdventure.name;
+  const region = "United Kingdom";
+  const activity = currentAdventure.description || "A little adventure chosen by LOST";
+  const date = new Date().toLocaleDateString("en-GB");
+  const recipientName = ""; // optional for now
+
+  // include coords so your postcard gets a mini map
+  const lat = currentAdventure.lat;
+  const lng = currentAdventure.lon;
+
+  status.textContent = "Sending your LOST postcard...";
+
+  try {
+    const res = await fetch("/.netlify/functions/send-postcard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        locationName,
+        region,
+        activity,
+        date,
+        recipientName,
+        lat,
+        lng
+      })
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("Send postcard error:", txt);
+      status.textContent = "Something went wrong – please try again.";
+      return;
+    }
+
+    status.textContent = "Done! Your LOST postcard is on its way ✨";
+    input.value = "";
+  } catch (err) {
+    console.error(err);
+    status.textContent = "Email failed — try again in a moment.";
+  }
+}
+
+// ------------------
+// Smooth scroll to postcard email form
+// ------------------
+function scrollToPostcard() {
+  const emailInput = document.getElementById("emailInput");
+  const emailStatus = document.getElementById("emailStatus");
+
+  if (!emailInput) {
+    alert("Email form not found.");
+    return;
+  }
+
+  emailInput.scrollIntoView({ behavior: "smooth", block: "center" });
+  emailStatus.textContent = "Enter your friend's email below to send this postcard.";
+
+  emailInput.style.outline = "2px solid #22c55e";
+  setTimeout(() => {
+    emailInput.style.outline = "none";
+  }, 1500);
+}
+
+// ------------------
+// UI Events
+// ------------------
+document.getElementById("pickBtn").addEventListener("click", async ()=>{
+  const start = await getStartCoords();
+  if (!start) return;
+
+  const radiusMilesInput = document.getElementById("radiusMiles");
+  const resultBox = document.getElementById("resultArea");
+  const radiusMiles = Number(radiusMilesInput ? radiusMilesInput.value : "0");
+  if (!radiusMiles || radiusMiles <= 0) {
+    const prev = resultBox.querySelector(".location-card");
+    const prevHtml = prev ? prev.outerHTML : "";
+    resultBox.innerHTML = `
+      ${prevHtml || ""}
+      <p style="color:#b91c1c;font-size:14px;margin-top:8px;">Please enter a radius in miles greater than 0.</p>
+    `;
+    return;
+  }
+
+  const radiusKm = radiusMiles * 1.60934; // miles -> km
+
+  const selectedTypes = [...document.querySelectorAll("#types input:checked")].map(x=>x.value);
+  const selectedMoods = [...document.querySelectorAll("#moods input:checked")].map(x=>x.value);
+  const boost = document.getElementById("surpriseBoost").checked;
+
+  const filtered = filterLocations(start, radiusKm, selectedTypes, selectedMoods);
+  const pick = pickRandom(filtered, boost);
+  showResult(pick);
+});
+
+document.getElementById("showListBtn").addEventListener("click", async ()=>{
+  const start = await getStartCoords();
+  if (!start) return;
+
+  const radiusMilesInput = document.getElementById("radiusMiles");
+  const resultBox = document.getElementById("resultArea");
+  const radiusMiles = Number(radiusMilesInput ? radiusMilesInput.value : "0");
+  if (!radiusMiles || radiusMiles <= 0) {
+    const prev = resultBox.querySelector(".location-card");
+    const prevHtml = prev ? prev.outerHTML : "";
+    resultBox.innerHTML = `
+      ${prevHtml || ""}
+      <p style="color:#b91c1c;font-size:14px;margin-top:8px;">Please enter a radius in miles greater than 0.</p>
+    `;
+    return;
+  }
+
+  const radiusKm = radiusMiles * 1.60934; // miles -> km
+
+  const selectedTypes = [...document.querySelectorAll("#types input:checked")].map(x=>x.value);
+  const selectedMoods = [...document.querySelectorAll("#moods input:checked")].map(x=>x.value);
+
+  const filtered = filterLocations(start, radiusKm, selectedTypes, selectedMoods);
+
+  const box = document.getElementById("resultArea");
+  if(filtered.length===0){
+    box.innerHTML = "<p>No matches found.</p>";
+    currentAdventure = null;
+    return;
+  }
+
+  box.innerHTML = filtered.map(f=>`
+    <div style="padding:6px 0;border-bottom:1px solid #eee;cursor:pointer;"
+         onclick="showResult(${JSON.stringify(f).replace(/"/g,'&quot;')})">
+      <strong>${f.name}</strong><br>
+      <span style="font-size:12px;color:gray;">${f._distance.toFixed(1)} km</span>
+    </div>
+  `).join("");
+});
+</script>
+</body>
+</html>
