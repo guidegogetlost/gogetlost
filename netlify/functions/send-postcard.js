@@ -1,29 +1,21 @@
 // netlify/functions/send-postcard.js
-
 const { Resend } = require("resend");
-const { postcardTemplate } = require("./postcardTemplate");
+const { postcardTemplate } = require("./postcardTemplate.js");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      body: "Method Not Allowed",
-    };
+    return { statusCode: 405, body: "Method Not Allowed" };
   }
 
   if (!process.env.RESEND_API_KEY) {
-    console.error("Missing RESEND_API_KEY env var");
-    return {
-      statusCode: 500,
-      body: "Missing email configuration.",
-    };
+    console.error("Missing RESEND_API_KEY");
+    return { statusCode: 500, body: "Missing email configuration." };
   }
 
   try {
-    const payload = JSON.parse(event.body || "{}");
-
+    const body = JSON.parse(event.body || "{}");
     const {
       email,
       locationName,
@@ -33,28 +25,21 @@ exports.handler = async (event) => {
       recipientName,
       lat,
       lng,
-    } = payload;
+    } = body;
 
     if (!email || !locationName) {
-      return {
-        statusCode: 400,
-        body: "Missing required fields.",
-      };
+      return { statusCode: 400, body: "Missing required fields." };
     }
 
-    // -----------------------------
-    // Scenic image (Unsplash)
-    // -----------------------------
-    // Simple, reliable URL – Unsplash will return a nice landscape
-    // We vary by location name so you don't always get the same picture.
-    const scenicImageUrl = `https://source.unsplash.com/featured/1200x800/?landscape,uk,${encodeURIComponent(
+    // Scenic image URL – Resend will fetch this and embed it
+    const scenicImagePath = `https://source.unsplash.com/featured/1200x800/?landscape,uk,${encodeURIComponent(
       locationName
     )}`;
 
-    // -----------------------------
-    // Static map image (OpenStreetMap)
-    // -----------------------------
-    let mapImageUrl = "";
+    // Map image + click-through URL
+    let mapImagePath = "";
+    let mapUrl = "";
+
     if (
       typeof lat === "number" &&
       typeof lng === "number" &&
@@ -62,48 +47,58 @@ exports.handler = async (event) => {
       !Number.isNaN(lng)
     ) {
       const zoom = 11;
-      const width = 600;
-      const height = 300;
+      const size = "600x260";
 
-      // Simple static map server that works over HTTPS
-      mapImageUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lng},lightblue1`;
+      mapImagePath = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${zoom}&size=${size}&markers=${lat},${lng},lightblue1`;
+      mapUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
     }
 
-    // -----------------------------
-    // Build HTML postcard
-    // -----------------------------
     const html = postcardTemplate({
       locationName,
-      region: region || "United Kingdom",
-      activity: activity || "A little adventure chosen by LOST.",
-      date: date || new Date().toLocaleDateString("en-GB"),
-      recipientName: recipientName || "",
-      scenicImageUrl,
-      mapImageUrl,
+      region,
+      activity,
+      date,
+      recipientName,
+      mapUrl,
     });
 
-    // -----------------------------
-    // Send email via Resend
-    // -----------------------------
+    // Inline attachments (CID)
+    const attachments = [
+      {
+        path: scenicImagePath,
+        filename: "scene.jpg",
+        contentId: "hero-image",
+      },
+    ];
+
+    if (mapImagePath) {
+      attachments.push({
+        path: mapImagePath,
+        filename: "map.png",
+        contentId: "map-image",
+      });
+    }
+
     const subject = `Your LOST postcard: ${locationName}`;
 
-    const emailResult = await resend.emails.send({
-      from: "LOST via Resend <onboarding@resend.dev>", // or your verified domain later
+    const result = await resend.emails.send({
+      from: "LOST via Resend <onboarding@resend.dev>", // later: your verified domain
       to: [email],
-      // You can keep this BCC so you see usage
+      // copy to you so you can track usage
       bcc: ["wheretonext@gogetlost.uk"],
       subject,
       html,
+      attachments,
     });
 
-    console.log("Email sent:", emailResult);
+    console.log("Postcard sent", result);
 
     return {
       statusCode: 200,
       body: JSON.stringify({ ok: true }),
     };
-  } catch (err) {
-    console.error("send-postcard error:", err);
+  } catch (error) {
+    console.error("send-postcard error:", error);
     return {
       statusCode: 500,
       body: "Failed to send postcard.",
