@@ -1,106 +1,112 @@
 // netlify/functions/send-postcard.js
-const { postcardTemplate } = require("./postcardTemplate.js");
 
-// Scenic image based on location using Unsplash
-function generateImageUrlForLocation(locationName, region) {
-  const query = encodeURIComponent(`${locationName} ${region} landscape`);
-  return `https://source.unsplash.com/featured/800x600/?${query}`;
-}
+const { Resend } = require("resend");
+const { postcardTemplate } = require("./postcardTemplate");
 
-// Mini map using OpenStreetMap (no API key needed)
-function generateMapImageUrl(lat, lng) {
-  if (!lat || !lng) return "";
-  const latStr = String(lat);
-  const lngStr = String(lng);
-  return `https://staticmap.openstreetmap.de/staticmap.php?center=${latStr},${lngStr}&zoom=13&size=600x320&markers=${latStr},${lngStr},red`;
-}
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return {
+      statusCode: 405,
+      body: "Method Not Allowed",
+    };
   }
 
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
+  if (!process.env.RESEND_API_KEY) {
     console.error("Missing RESEND_API_KEY env var");
-    return { statusCode: 500, body: "Email not configured" };
+    return {
+      statusCode: 500,
+      body: "Missing email configuration.",
+    };
   }
-
-  let payload;
-  try {
-    payload = JSON.parse(event.body || "{}");
-  } catch (err) {
-    console.error("Invalid JSON body", err);
-    return { statusCode: 400, body: "Invalid JSON" };
-  }
-
-  const {
-    email,          // recipient email (friend)
-    locationName,
-    region,
-    activity,
-    date,
-    recipientName,  // friend's name
-    lat,
-    lng,
-    mapImageUrl: providedMapImageUrl, // optional override
-  } = payload;
-
-  if (!email || !locationName) {
-    return { statusCode: 400, body: "Missing email or location" };
-  }
-
-  const imageUrl = generateImageUrlForLocation(
-    locationName,
-    region || "United Kingdom"
-  );
-
-  // Use provided mapImageUrl if sent, otherwise build OSM static map from lat/lng
-  const mapImageUrl =
-    providedMapImageUrl || generateMapImageUrl(lat, lng);
-
-  const html = postcardTemplate({
-    locationName,
-    region,
-    activity,
-    date,
-    recipientName,
-    imageUrl,
-    mapImageUrl,
-  });
 
   try {
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "LOST <wheretonext@gogetlost.uk>",
-        to: [email],
-        // you get a hidden copy of every postcard
-        bcc: "wheretonext@gogetlost.uk",
-        subject: `Let’s get lost in ${locationName}`,
-        html,
-      }),
+    const payload = JSON.parse(event.body || "{}");
+
+    const {
+      email,
+      locationName,
+      region,
+      activity,
+      date,
+      recipientName,
+      lat,
+      lng,
+    } = payload;
+
+    if (!email || !locationName) {
+      return {
+        statusCode: 400,
+        body: "Missing required fields.",
+      };
+    }
+
+    // -----------------------------
+    // Scenic image (Unsplash)
+    // -----------------------------
+    // Simple, reliable URL – Unsplash will return a nice landscape
+    // We vary by location name so you don't always get the same picture.
+    const scenicImageUrl = `https://source.unsplash.com/featured/1200x800/?landscape,uk,${encodeURIComponent(
+      locationName
+    )}`;
+
+    // -----------------------------
+    // Static map image (OpenStreetMap)
+    // -----------------------------
+    let mapImageUrl = "";
+    if (
+      typeof lat === "number" &&
+      typeof lng === "number" &&
+      !Number.isNaN(lat) &&
+      !Number.isNaN(lng)
+    ) {
+      const zoom = 11;
+      const width = 600;
+      const height = 300;
+
+      // Simple static map server that works over HTTPS
+      mapImageUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lng},lightblue1`;
+    }
+
+    // -----------------------------
+    // Build HTML postcard
+    // -----------------------------
+    const html = postcardTemplate({
+      locationName,
+      region: region || "United Kingdom",
+      activity: activity || "A little adventure chosen by LOST.",
+      date: date || new Date().toLocaleDateString("en-GB"),
+      recipientName: recipientName || "",
+      scenicImageUrl,
+      mapImageUrl,
     });
 
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error("Resend error:", text);
-      return { statusCode: 500, body: "Email send failed" };
-    }
+    // -----------------------------
+    // Send email via Resend
+    // -----------------------------
+    const subject = `Your LOST postcard: ${locationName}`;
+
+    const emailResult = await resend.emails.send({
+      from: "LOST via Resend <onboarding@resend.dev>", // or your verified domain later
+      to: [email],
+      // You can keep this BCC so you see usage
+      bcc: ["wheretonext@gogetlost.uk"],
+      subject,
+      html,
+    });
+
+    console.log("Email sent:", emailResult);
 
     return {
       statusCode: 200,
       body: JSON.stringify({ ok: true }),
     };
   } catch (err) {
-    console.error("Resend request failed:", err);
+    console.error("send-postcard error:", err);
     return {
       statusCode: 500,
-      body: "Error sending email",
+      body: "Failed to send postcard.",
     };
   }
 };
