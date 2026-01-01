@@ -1,8 +1,42 @@
 // netlify/functions/send-postcard.js
-const { Resend } = require("resend");
+const https = require("https");
 const { postcardTemplate } = require("./postcardTemplate.js");
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Helper to POST to Resend API using Node's https (no extra packages)
+function sendViaResend(apiKey, payload) {
+  return new Promise((resolve, reject) => {
+    const json = JSON.stringify(payload);
+
+    const options = {
+      hostname: "api.resend.com",
+      path: "/emails",
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(json),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ statusCode: res.statusCode, body });
+        } else {
+          reject(
+            new Error(`Resend error ${res.statusCode}: ${body.toString()}`)
+          );
+        }
+      });
+    });
+
+    req.on("error", reject);
+    req.write(json);
+    req.end();
+  });
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -31,15 +65,13 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: "Missing required fields." };
     }
 
-    // Scenic image URL – Resend will fetch this and embed it
-    const scenicImagePath = `https://source.unsplash.com/featured/1200x800/?landscape,uk,${encodeURIComponent(
+    // Scenic hero image (Unsplash)
+    const scenicImageUrl = `https://source.unsplash.com/featured/1200x800/?landscape,uk,${encodeURIComponent(
       locationName
     )}`;
 
-    // Map image + click-through URL
-    let mapImagePath = "";
-    let mapUrl = "";
-
+    // Map image URL (also used as link)
+    let mapImageUrl = "";
     if (
       typeof lat === "number" &&
       typeof lng === "number" &&
@@ -47,51 +79,36 @@ exports.handler = async (event) => {
       !Number.isNaN(lng)
     ) {
       const zoom = 11;
-      const size = "600x260";
-
-      mapImagePath = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${zoom}&size=${size}&markers=${lat},${lng},lightblue1`;
-      mapUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+      const width = 600;
+      const height = 260;
+      mapImageUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${zoom}&size=${width}x${height}&markers=${lat},${lng},lightblue1`;
     }
 
     const html = postcardTemplate({
       locationName,
       region,
       activity,
-      date,
+      date: date || new Date().toLocaleDateString("en-GB"),
       recipientName,
-      mapUrl,
+      scenicImageUrl,
+      mapImageUrl,
     });
-
-    // Inline attachments (CID)
-    const attachments = [
-      {
-        path: scenicImagePath,
-        filename: "scene.jpg",
-        contentId: "hero-image",
-      },
-    ];
-
-    if (mapImagePath) {
-      attachments.push({
-        path: mapImagePath,
-        filename: "map.png",
-        contentId: "map-image",
-      });
-    }
 
     const subject = `Your LOST postcard: ${locationName}`;
 
-    const result = await resend.emails.send({
-      from: "LOST via Resend <onboarding@resend.dev>", // later: your verified domain
+    const resendPayload = {
+      from: "LOST via Resend <onboarding@resend.dev>", // later: your own domain
       to: [email],
-      // copy to you so you can track usage
-      bcc: ["wheretonext@gogetlost.uk"],
+      bcc: ["wheretonext@gogetlost.uk"], // so you see usage
       subject,
       html,
-      attachments,
-    });
+    };
 
-    console.log("Postcard sent", result);
+    const result = await sendViaResend(
+      process.env.RESEND_API_KEY,
+      resendPayload
+    );
+    console.log("Postcard sent", result.statusCode);
 
     return {
       statusCode: 200,
@@ -105,4 +122,3 @@ exports.handler = async (event) => {
     };
   }
 };
-
